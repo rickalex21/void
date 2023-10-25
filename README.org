@@ -1,0 +1,342 @@
+
+
+* README
+
+#+begin_src text
+⚠ Work in progress, use at your own risk! :D
+#+end_src
+
+* Cloning
+
+*** Clonezilla
+
+Download clonezilla for your architecture (e.g., clonezilla-live-3.1.0-22-amd64.iso)
+in your ventoy folder and boot off of it. Ventoy is a program that creates a bootable
+usb in which you can boot multiple images. Read more about it [[https://www.ventoy.net/en/index.html][here]].
+
+The steps are self explanatory. However, if you get an error about not enough space
+on the destination device you will need to select the option:
+
+#+begin_src text
+-k1 Create partition table proportionally
+#+end_src
+
+
+*** DDRESCUE
+
+WARNING: Don't work, I got disk full error. Use clonezilla instead.
+
+On a void Linux live usb run the following commands. The root password is ~voidlinux~.
+WARNING: Partition tables and data will be overridden on the sdb destination external ssd.
+This will take about an hour for a 1TB at about 300MB/s.
+
+#+begin_src bash :results output :noeval
+su -
+nmcli --ask dev wifi connect NetworkSSID
+xbps-install -u xbps
+xbps-install -S ddrescue
+lsblk
+ddrescue -f -n /dev/nvme0n1 /dev/sdb /media/usb/ddrescue-recovery.log
+#+end_src
+
+Once the cloning is done boot from the external destination ssd to confirm that
+all data is on there. You can use the ~lsblk~ or ~mount~ command to ensure that you
+booted from the external ssd.
+
+* Windows
+
+** Deactivate Windows
+
+Since we are wiping out the nvme we will need to deactivate it then reactivate it.
+
+Boot into the source computer with Windows and run these commands on the cmd prompt.
+
+#+begin_src bash :results output :noeval
+slmgr /dlv
+#+end_src
+
+* Void Linux Install with BTRFS and LUKS
+
+** Introduction
+This is my opinionated setup. Change btrfs options, mounts, suvolumes etc.. if needed.
+
+This tutorial assumes the following:
+
++ You are an intermediate Linux user but not familiar with btrfs or Void Linux.
++ You have partitions created ready to use, see windows.org or use gparted.
++ You have a Void live usb installer preferably xfce to scroll for errors and check
+  online documentation. Check mirrors for fastest connection.
++ Are connected to the internet, I recommend a wired connection.
+
+The installation is for x86_64 architecture and includes:
++ glibc
++ btrfs
++ luks
++ US English Language
++ US Central Time
+
+This is a bash script, additional explanations are provided here to avoid populating
+the script with comments. Comments in the script are provided where needed for reference.
+
+** Wi-Fi
+
+If you need to connec to Wi-Fi you can use the command ~nmcli~, note that it may be
+slower to use Wi-Fi depending on your connection and device. A wired connection is recommended.
+
+#+begin_src bash :results output :noeval
+nmcli dev status
+nmcli radio wifi
+nmcli dev wifi list
+sudo nmcli --ask dev wifi connect your-network-ssid
+ping -c 2 www.google.com
+#+end_src
+
+** Script Options
+Log in as ~root~, the password is ~voidlinux~. Enter the command ~bash~ to enter the bash
+shell.
+
+Download the script.
+
+#+begin_src bash :results output :noeval
+xbps-install S git 
+cd
+git clone https://github.com/rickalex21/void.git
+chmod u+x void-setup.sh
+#+end_src
+
+Run the command ~lsblk~ to find your partition to be used for encryption. In
+the ~void-setup.sh~ script change the DEVICE and KEY.
+
+The ~KEY~ will enable you to mount later on without a password. This can be useful if
+you need to mount from elsewhere. The key can be created on the live usb boot, it
+will be erased on reboot.
+
+The ~DEVICE~ is the partition that will be used for encryption. This will be wiped out,
+make sure that there's nothing on here that you need.
+
+The ~EFI~ is the partition that will hold the kernels and will be mounted at ~/boot~. See
+the windows.org guide for creating it or created on Linux.
+
+#+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
+KEY=some-key.data
+DEVICE=/dev/nvme0n1p4
+EFI=/dev/nvme0n1p1
+
+REPO=https://repo-default.voidlinux.org/current
+ARCH=x86_64
+
+
+BTRFS_OPTS="defaults,noatime,compress=zstd,space_cache=v2,ssd,discard=async"
+
+green=$(tput setaf 2)
+red=$(tput setaf 1)
+yellow=$(tput setaf 3)
+no=$(tput sgr0)
+
+
+main(){
+case $1 in
+  all) rmmod pcspkr ; crypt_setup ; btrfs_setup ; base_install ; locales ; chroot_dev
+    ;;
+    fstab-gen|fstab) fstab-gen
+    ;;
+    mount) crypt_mount
+    ;;
+    *)
+        print_help
+    ;;
+esac
+}
+
+crypt_setup(){
+  test ! -f "$KEY" && echo -e  "${red}$KEY does not exist.${no}" && exit 1
+  cryptsetup luksFormat "$DEVICE"
+  cryptsetup luksAddKey "$DEVICE" "$KEY"
+}
+
+crypt_mount(){
+  cryptsetup open "$DEVICE" btrfs --key-file "$KEY"
+   # Mount the '/' subvolume named @void, it will contain home, tmp, root...
+  mount -o subvol=@void,$BTRFS_OPTS /dev/mapper/btrfs /mnt
+  
+  # Mount subvolumes on @void mounted on /mnt
+  for subv in cloud data home root opt srv ;do
+      mkdir -p /mnt/$subv
+      mount -o subvol=@$subv,$BTRFS_OPTS /dev/mapper/btrfs /mnt/$subv
+  done
+
+  # Mount nested subvolumes in var: @vlog on /var/log etc..
+  for subv in log cache tmp ; do
+      mkdir -p /mnt/var/$subv
+      mount -o subvol=@v${subv},$BTRFS_OPTS /dev/mapper/btrfs /mnt/var/$subv
+  done
+  mkdir -p /mnt/usr/local
+  mount -o subvol=@usrl,$BTRFS_OPTS /dev/mapper/btrfs /mnt/usr/local
+
+  # EFI
+  mkdir -p /mnt/boot
+  mount $EFI /mnt/boot
+}
+#+end_src
+
+** BTRFS Setup
+
+Create the file system and mount it.
+
+You can create ~snapshots~ later with snapper. Snapper will warn if you have existing
+snapshots.
+
+If you already created a subvolume[fn:subvolume] you would add
+~subvol=@void,defaults...~ Where ~@void~ is the root subvolume that contains home, etc,
+root etc.. Since we have not created btrfs subvolumes, lets create them.
+
+The "@" symbol is used to identify the btrfs subvolume. It is not necessary.
+
+
+#+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
+btrfs_setup(){
+  # For ext4 use  mkfs.ext4 -F /dev/mapper/XXXX
+  mkfs.btrfs --label btrfs /dev/mapper/btrfs
+  mount -o "$BTRFS_OPTS" /dev/mapper/btrfs /mnt
+
+  echo -e "${yellow}Creating subvolumes.${no}"
+  read
+  # Create subvolumes.
+  # NOTE: The nested subvolumes are created at the top but mounted nested on @void (e.g., @usrl /usr/local )
+  #       tmp is not created, it is added automatically on fstab as tmfs /tmp later.
+  for subv in void cloud data home root opt srv usrl vlog vcache vtmp ; do
+      btrfs subvolume create /mnt/@$subv
+  done
+  umount -R /mnt
+  crypt_mount
+  echo -e "\n${green}Btrfs created and mounted. EFI is mounted.${no}\n"
+}
+#+end_src
+
+** Base Install
+
+We will use the XBPS Method for installing the base system. Check [[https://docs.voidlinux.org/installation/guides/chroot.html][Void Linux Documentation]] 
+for an updated version. There are more mirrors available [[https://docs.voidlinux.org/xbps/repositories/mirrors/index.html][here.]] You can make changes
+here on the variables REPO and ARCH at the top of the script.
+
+Leave the variables REPO and ARCH unchanged for glibc and x86_64. If you need to
+make changes read the Void Linux Documentation [[https://docs.voidlinux.org/xbps/repositories/index.html#the-main-repository][appropriate URL]] section for more info.
+
+
+#+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
+base_install(){
+echo -e "${yellow}Installing base-system...${no}"
+read
+mkdir -p /mnt/var/db/xbps/keys
+cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/
+XBPS_ARCH=$ARCH xbps-install -S -r /mnt -R "$REPO" base-system curl nvim
+}
+#+end_src
+
+** Locales
+
+Change accordingly.
+
+#+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
+locales(){
+echo -e "${yellow}Creating locales files...${no}"
+read
+echo "void" >/mnt/etc/hostname
+
+echo "## Generated by my setup script" >>/mnt/etc/rc.conf
+echo "HARDWARECLOCK=\"UTC\"" >>/mnt/etc/rc.conf
+echo "TIMEZONE=\"US/Central\"" >>/mnt/etc/rc.conf
+echo "KEYMAP=\"en\"" >>/mnt/etc/rc.conf
+echo "FONT=\"ter-v22n\"" >>/mnt/etc/rc.conf
+
+echo "en_US.UTF-8 UTF-8" >>/mnt/etc/default/libc-locales
+xbps-reconfigure -f glibc-locales
+
+
+echo -e "${yellow}Echo enter chroot now with xchroot /mnt /bin/bash...${no}"
+echo -e "${yellow}Download the script with curl https://raw.githubusercontent.com/rickalex21/void/master/void-setup.sh -o void-setup.sh ${no}"
+}
+#+end_src
+
+** Chroot
+
+
+The easiest way to chroot is to use ~xchroot~. At this point I could do a heredoc and chroot.
+Instead I follow the rest of the steps in [[https://docs.voidlinux.org/installation/guides/chroot.html#entering-the-chroot][Entering the Chroot]] section.
+
+#+begin_src bash :results output :noeval
+xchroot /mnt /bin/bash <<EOF
+EOF
+#+end_src
+
+When you chroot you will need to download this script:
+
+#+begin_src bash :results output :noeval
+curl https://raw.githubusercontent.com/rickalex21/void/master/void-setup.sh -o void-setup.sh
+#+end_src
+
+#+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
+chroot_dev(){
+xchroot /mnt /bin/bash
+
+echo "Changing password for root:"
+passwd
+cp /proc/mounts /etc/fstab
+}
+#+end_src
+
+** Fstab
+
+
+#+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
+fstab-gen(){
+  # Note: You have to be in chroot
+  BTRFS_UUID=$(blkid -s UUID -o value /dev/mapper/btrfs)
+  cat /proc/mounts | grep -E "subvolid|boot|tmpfs" | grep -v cgroup | sed "s@/dev/mapper/btrfs@UUID=$BTRFS_UUID@g" >/etc/fstab
+  echo -e "${yellow}Created fstab, check it.${no}"
+}
+#+end_src
+
+#+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
+print_help(){
+    printf "
+    USAGE: %s all
+
+    all - Runs all the steps.
+    \n" "$0"
+}
+main "$@"
+#+end_src
+
+** Grub
+
+Once you have chroot into the system you can install and configure grub.
+
+#+begin_src bash :results output :noeval
+xbps-install grub-x86_64-efi
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="Void"
+#+end_src
+
+Edit ~/etc/default/grub~. Make note of the encrypted partition with ~blkid~.
+
+#+begin_src bash :results output :noeval
+GRUB_ENABLE_CRYPTODISK=y
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=4 rd.lvm.vg=voidvm rd.luks.uuid=2d7819ac-XXX-XX.."
+GRUB_DISABLE_OS_PROBER=false
+#+end_src
+
+Next tell grub about the updates:
+
+#+begin_src bash :results output :noeval
+update-grub
+#+end_src
+
+SOURCE: [[https://docs.voidlinux.org/installation/guides/fde.html][Void Linux Full Disk Encryption]]
+
+
+* Footnotes
+
+[fn:subvolume: You will need to create subvolumes to prevent certain mounts from
+having snapshots. For example, you may have a subvolume that is named "@data" with big
+files that are rarely used. If you were to snapshot this, your storage space would
+increase quickly.]

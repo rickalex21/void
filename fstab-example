@@ -1,0 +1,14 @@
+UUID=827aa708-41e2-4538-b513-31ee94781e1d  / btrfs rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=3001,subvol=/@void 0 0
+UUID=BE0A-4A87      	/boot     	vfat      	rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro	0 2
+
+# Arch shared with void
+UUID=827aa708-41e2-4538-b513-31ee94781e1d	/root     	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=258,subvol=/@root	0 0
+UUID=827aa708-41e2-4538-b513-31ee94781e1d	/data     	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=496,subvol=/@data	0 0
+UUID=827aa708-41e2-4538-b513-31ee94781e1d	/cloud    	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=5115,subvol=/@cloud 0 0
+UUID=827aa708-41e2-4538-b513-31ee94781e1d	/home     	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home	0 0
+
+# Arch
+UUID=827aa708-41e2-4538-b513-31ee94781e1d	/media/arch         	btrfs     	rw,noatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/@	0 0
+
+tmpfs /dev/shm tmpfs rw,nosuid,nodev,noexec,inode64 0 0
+tmpfs           /tmp        tmpfs   defaults,nosuid,nodev   0 0
