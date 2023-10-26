@@ -43,7 +43,11 @@ crypt_setup(){
 
 crypt_mount(){
 # Open and mount an encrypted partition
-  cryptsetup open "$DEVICE" btrfs --key-file "$KEY"
+  if test -f "$KEY";then
+    cryptsetup open "$DEVICE" btrfs --key-file "$KEY"
+  else  
+    cryptsetup open "$DEVICE" btrfs
+  fi
    # Mount the '/' subvolume named @void, it will contain home, tmp, root...
   mount -o subvol=@void,$BTRFS_OPTS /dev/mapper/btrfs /mnt
   
@@ -135,7 +139,8 @@ print_help(){
     printf "
     USAGE: %s all
 
-    all - Runs all the steps.
+    all   -   Runs all the steps.
+    mount -  Opens and mounts the encrypted partition at $DEVICE and all subvolumes on /mnt
     \n" "$0"
 }
 main "$@"
