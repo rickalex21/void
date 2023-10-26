@@ -94,7 +94,7 @@ read
 # REPO and ARCH varaibles are set on top
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/
-XBPS_ARCH=$ARCH xbps-install -S -r /mnt -R "$REPO" base-system curl nvim
+XBPS_ARCH=$ARCH xbps-install -S -r /mnt -R "$REPO" base-system nvim terminus-font
 }
 
 locales(){

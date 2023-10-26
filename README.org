@@ -30,6 +30,8 @@ On a void Linux live usb run the following commands. The root password is ~voidl
 WARNING: Partition tables and data will be overridden on the sdb destination external ssd.
 This will take about an hour for a 1TB at about 300MB/s.
 
+NOTE: Trying to connect from the gui on Void Linux may not work.
+
 #+begin_src bash :results output :noeval
 su -
 nmcli --ask dev wifi connect NetworkSSID
@@ -91,18 +93,24 @@ sudo nmcli --ask dev wifi connect your-network-ssid
 ping -c 2 www.google.com
 #+end_src
 
-** Script Options
-Log in as ~root~, the password is ~voidlinux~. Enter the command ~bash~ to enter the bash
-shell.
+** Pre Install
+
+We will need to install git and other useful things. Note that gparted only works
+with the xfce iso.
 
 Download the script.
 
 #+begin_src bash :results output :noeval
-xbps-install S git 
+xbps-install -Su xbps git # gparted optional
 cd
 git clone https://github.com/rickalex21/void.git
+cd void
 chmod u+x void-setup.sh
 #+end_src
+
+** Script Options
+Log in as ~root~, the password is ~voidlinux~. Enter the command ~bash~ to enter the bash
+shell.
 
 Run the command ~lsblk~ to find your partition to be used for encryption. In
 the ~void-setup.sh~ script change the DEVICE and KEY.
@@ -226,6 +234,8 @@ here on the variables REPO and ARCH at the top of the script.
 Leave the variables REPO and ARCH unchanged for glibc and x86_64. If you need to
 make changes read the Void Linux Documentation [[https://docs.voidlinux.org/xbps/repositories/index.html#the-main-repository][appropriate URL]] section for more info.
 
++ nvim - to edit files, you can use vi instead.
++ terminus-font - needed for grub and console
 
 #+begin_src bash :noeval :tangle void-setup.sh :tangle-mode (identity #o755)
 base_install(){
@@ -233,7 +243,7 @@ echo -e "${yellow}Installing base-system...${no}"
 read
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/
-XBPS_ARCH=$ARCH xbps-install -S -r /mnt -R "$REPO" base-system curl nvim
+XBPS_ARCH=$ARCH xbps-install -S -r /mnt -R "$REPO" base-system nvim terminus-font
 }
 #+end_src
 
@@ -317,9 +327,13 @@ main "$@"
 
 Once you have chroot into the system you can install and configure grub.
 
+Make sure you use --efi-directory=/boot  not /boot/EFI.
+The layout should look like this: boot/EFI/Void
+
+
 #+begin_src bash :results output :noeval
 xbps-install grub-x86_64-efi
-grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="Void"
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id="Void"
 #+end_src
 
 Edit ~/etc/default/grub~. Make note of the encrypted partition with ~blkid~.
